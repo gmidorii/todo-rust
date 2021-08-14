@@ -26,25 +26,23 @@ async fn get_todo(
   req_path: web::Path<GetTodoReqPath>,
 ) -> Result<HttpResponse, Error> {
   println!("id: {}", req_path.id);
-  let conn = match db.get_ref().get() {
-    Ok(conn) => conn,
-    Err(e) => return Err(error::ErrorInternalServerError(e)),
-  };
-  let mut stmt = match conn.prepare("SELECT id, title, body FROM todo WHERE id = ?1") {
-    Ok(stmt) => stmt,
-    Err(e) => return Err(error::ErrorInternalServerError(e)),
-  };
-  let todo_itr = match stmt.query_map(params![req_path.id], |row| {
-    Ok(Todo {
-      id: row.get(0)?,
-      title: row.get(1)?,
-      body: row.get(2)?,
-      // created_at: DateTime::parse_from_rfc3339(&row.get(3)?)?,
+  let conn = db
+    .get_ref()
+    .get()
+    .map_err(|e| error::ErrorInternalServerError(e))?;
+  let mut stmt = conn
+    .prepare("SELECT id, title, body FROM todo WHERE id = ?1")
+    .map_err(|e| error::ErrorInternalServerError(e))?;
+  let todo_itr = stmt
+    .query_map(params![req_path.id], |row| {
+      Ok(Todo {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        body: row.get(2)?,
+        // created_at: DateTime::parse_from_rfc3339(&row.get(3)?)?,
+      })
     })
-  }) {
-    Ok(itr) => itr,
-    Err(e) => return Err(error::ErrorInternalServerError(e)),
-  };
+    .map_err(|e| error::ErrorInternalServerError(e))?;
 
   let mut res = GetTodoRes { todos: Vec::new() };
   for todo in todo_itr {
@@ -103,10 +101,7 @@ struct Todo {
 }
 
 fn init_db(pool: &Pool<SqliteConnectionManager>) -> Result<(), Box<dyn std::error::Error>> {
-  let conn = match pool.get() {
-    Ok(conn) => conn,
-    Err(e) => return Err(Box::new(e)),
-  };
+  let conn = pool.get()?;
   conn.execute(
     "CREATE TABLE todo (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,12 +110,6 @@ fn init_db(pool: &Pool<SqliteConnectionManager>) -> Result<(), Box<dyn std::erro
       created_at  TEXT
     )",
     params![],
-  )?;
-
-  // insert sample data
-  conn.execute(
-    "INSERT INTO todo (title, body) VALUES(?1, ?2)",
-    params!["title", "body"],
   )?;
 
   Ok(())
