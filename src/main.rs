@@ -1,4 +1,4 @@
-use actix_web::{error, get, web, App, Error, HttpResponse, HttpServer, Responder};
+use actix_web::{error, get, post, web, App, Error, HttpResponse, HttpServer, Responder};
 use chrono::prelude::{DateTime, FixedOffset};
 use r2d2::Pool;
 use r2d2_sqlite::{self, SqliteConnectionManager};
@@ -60,9 +60,43 @@ async fn get_todo(
   Ok(HttpResponse::Ok().json(res))
 }
 
+#[derive(Deserialize)]
+struct PostTodoReq {
+  title: String,
+  body: Option<String>,
+}
+
+#[derive(Serialize)]
+struct PostTodoRes {
+  id: i64,
+}
+
+#[post("/todo")]
+async fn post_todo(
+  db: web::Data<Pool<SqliteConnectionManager>>,
+  req: web::Json<PostTodoReq>,
+) -> Result<HttpResponse, Error> {
+  let conn = db
+    .get_ref()
+    .get()
+    .map_err(|e| error::ErrorInternalServerError(e))?;
+
+  let id = conn
+    .execute(
+      "INSERT INTO todo (title, body) VALUES(?1, ?2)",
+      params![req.title, req.body],
+    )
+    .map(|_| conn.last_insert_rowid())
+    .map_err(|e| error::ErrorInternalServerError(e))?;
+
+  let res = PostTodoRes { id: id };
+
+  Ok(HttpResponse::Ok().json(res))
+}
+
 #[derive(Serialize, Deserialize)]
 struct Todo {
-  id: i32,
+  id: i64,
   title: String,
   body: String,
   // created_at: DateTime<FixedOffset>,
@@ -106,6 +140,7 @@ async fn main() -> std::io::Result<()> {
       .data(pool.clone())
       .service(health)
       .service(get_todo)
+      .service(post_todo)
   })
   .bind("127.0.0.1:8080")?
   .run()
