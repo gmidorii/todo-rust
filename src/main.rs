@@ -30,11 +30,11 @@ async fn get_todo(
     Ok(conn) => conn,
     Err(e) => return Err(error::ErrorInternalServerError(e)),
   };
-  let mut stmt = match conn.prepare("SELECT id, title, body FROM todo") {
+  let mut stmt = match conn.prepare("SELECT id, title, body FROM todo WHERE id = ?1") {
     Ok(stmt) => stmt,
     Err(e) => return Err(error::ErrorInternalServerError(e)),
   };
-  let todo_itr = match stmt.query_map([], |row| {
+  let todo_itr = match stmt.query_map(params![req_path.id], |row| {
     Ok(Todo {
       id: row.get(0)?,
       title: row.get(1)?,
@@ -48,7 +48,13 @@ async fn get_todo(
 
   let mut res = GetTodoRes { todos: Vec::new() };
   for todo in todo_itr {
-    res.todos.push(todo.unwrap());
+    match todo {
+      Ok(t) => res.todos.push(t),
+      Err(e) => {
+        println!("error todo {}", e);
+        return Err(error::ErrorInternalServerError(e));
+      }
+    }
   }
 
   Ok(HttpResponse::Ok().json(res))
@@ -56,26 +62,31 @@ async fn get_todo(
 
 #[derive(Serialize, Deserialize)]
 struct Todo {
-  id: String,
+  id: i32,
   title: String,
   body: String,
   // created_at: DateTime<FixedOffset>,
 }
 
-fn init_db(pool: Pool<SqliteConnectionManager>) -> Result<(), std::error::Error> {
-  let conn = pool.get()?;
-  pool.execute(
+fn init_db(pool: &Pool<SqliteConnectionManager>) -> Result<(), Box<dyn std::error::Error>> {
+  let conn = match pool.get() {
+    Ok(conn) => conn,
+    Err(e) => return Err(Box::new(e)),
+  };
+  conn.execute(
     "CREATE TABLE todo (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       title       TEXT,
       body        TEXT,
       created_at  TEXT
     )",
-    [],
+    params![],
   )?;
+
+  // insert sample data
   conn.execute(
     "INSERT INTO todo (title, body) VALUES(?1, ?2)",
-    params!["first", "first sample todo"],
+    params!["title", "body"],
   )?;
 
   Ok(())
@@ -86,7 +97,7 @@ async fn main() -> std::io::Result<()> {
   let manager = SqliteConnectionManager::memory();
   let pool = Pool::new(manager).unwrap();
   // TODO: fix use manager
-  match init_db() {
+  match init_db(&pool) {
     Ok(_) => println!("succeed db init"),
     Err(err) => panic!("Error: {}", err),
   }
