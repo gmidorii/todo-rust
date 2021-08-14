@@ -1,7 +1,7 @@
 
 ## API
 
-- POST /todo/:id
+- POST /todo
 - GET /todo/:id
 - PUT /todo/:id
 - DELETE /todo/:id
