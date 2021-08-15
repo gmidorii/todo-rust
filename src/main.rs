@@ -17,7 +17,7 @@ struct GetTodoReqPath {
 
 #[derive(Serialize, Deserialize)]
 struct GetTodoRes {
-  todos: Vec<Todo>,
+  todo: Todo,
 }
 
 #[get("/todo/{id}")]
@@ -44,10 +44,12 @@ async fn get_todo(
     })
     .map_err(|e| error::ErrorInternalServerError(e))?;
 
-  let mut res = GetTodoRes { todos: Vec::new() };
   for todo in todo_itr {
     match todo {
-      Ok(t) => res.todos.push(t),
+      Ok(t) => {
+        let res = GetTodoRes { todo: t };
+        return Ok(HttpResponse::Ok().json(res));
+      }
       Err(e) => {
         println!("error todo {}", e);
         return Err(error::ErrorInternalServerError(e));
@@ -55,7 +57,7 @@ async fn get_todo(
     }
   }
 
-  Ok(HttpResponse::Ok().json(res))
+  Err(error::ErrorNotFound("not found todo"))
 }
 
 #[derive(Deserialize)]
@@ -103,7 +105,7 @@ struct Todo {
 fn init_db(pool: &Pool<SqliteConnectionManager>) -> Result<(), Box<dyn std::error::Error>> {
   let conn = pool.get()?;
   conn.execute(
-    "CREATE TABLE todo (
+    "CREATE TABLE IF NOT EXISTS todo (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       title       TEXT,
       body        TEXT,
@@ -117,7 +119,7 @@ fn init_db(pool: &Pool<SqliteConnectionManager>) -> Result<(), Box<dyn std::erro
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-  let manager = SqliteConnectionManager::memory();
+  let manager = SqliteConnectionManager::file("./todo.sqlite3");
   let pool = Pool::new(manager).unwrap();
   // TODO: fix use manager
   match init_db(&pool) {
