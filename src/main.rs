@@ -1,5 +1,5 @@
 use actix_web::{error, get, post, web, App, Error, HttpResponse, HttpServer, Responder};
-use chrono::prelude::{DateTime, FixedOffset};
+use chrono::prelude::{DateTime, FixedOffset, Local};
 use r2d2::Pool;
 use r2d2_sqlite::{self, SqliteConnectionManager};
 use rusqlite::{params, Connection};
@@ -31,15 +31,25 @@ async fn get_todo(
     .get()
     .map_err(|e| error::ErrorInternalServerError(e))?;
   let mut stmt = conn
-    .prepare("SELECT id, title, body FROM todo WHERE id = ?1")
+    .prepare("SELECT id, title, body, created_at FROM todo WHERE id = ?1")
     .map_err(|e| error::ErrorInternalServerError(e))?;
   let todo_itr = stmt
     .query_map(params![req_path.id], |row| {
+      let ss: Option<String> = match row.get(3) {
+        Ok(s) => s,
+        Err(e) => None,
+      };
+      let created_at: Option<DateTime<FixedOffset>> = match ss {
+        Some(s) => Some(DateTime::parse_from_rfc3339(&s).map_err(|e| {
+          rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e))
+        })?),
+        None => None,
+      };
       Ok(Todo {
         id: row.get(0)?,
         title: row.get(1)?,
         body: row.get(2)?,
-        // created_at: DateTime::parse_from_rfc3339(&row.get(3)?)?,
+        created_at: created_at,
       })
     })
     .map_err(|e| error::ErrorInternalServerError(e))?;
@@ -81,10 +91,11 @@ async fn post_todo(
     .get()
     .map_err(|e| error::ErrorInternalServerError(e))?;
 
+  let now = Local::now();
   let id = conn
     .execute(
-      "INSERT INTO todo (title, body) VALUES(?1, ?2)",
-      params![req.title, req.body],
+      "INSERT INTO todo (title, body, created_at) VALUES(?1, ?2, ?3)",
+      params![req.title, req.body, now.to_rfc3339()],
     )
     .map(|_| conn.last_insert_rowid())
     .map_err(|e| error::ErrorInternalServerError(e))?;
@@ -99,7 +110,7 @@ struct Todo {
   id: i64,
   title: String,
   body: String,
-  // created_at: DateTime<FixedOffset>,
+  created_at: Option<DateTime<FixedOffset>>,
 }
 
 fn init_db(pool: &Pool<SqliteConnectionManager>) -> Result<(), Box<dyn std::error::Error>> {
