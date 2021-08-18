@@ -2,7 +2,7 @@ use actix_web::{error, get, post, web, App, Error, HttpResponse, HttpServer, Res
 use chrono::prelude::{DateTime, FixedOffset, Local};
 use r2d2::Pool;
 use r2d2_sqlite::{self, SqliteConnectionManager};
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
 #[get("/health")]
@@ -37,7 +37,7 @@ async fn get_todo(
     .query_map(params![req_path.id], |row| {
       let ss: Option<String> = match row.get(3) {
         Ok(s) => s,
-        Err(e) => None,
+        Err(_) => None,
       };
       let created_at: Option<DateTime<FixedOffset>> = match ss {
         Some(s) => Some(DateTime::parse_from_rfc3339(&s).map_err(|e| {
