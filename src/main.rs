@@ -5,25 +5,17 @@ use r2d2_sqlite::{self, SqliteConnectionManager};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
+mod model;
+
 #[get("/health")]
 async fn health() -> impl Responder {
   HttpResponse::Ok().body("OK!!")
 }
 
-#[derive(Deserialize)]
-struct GetTodoReqPath {
-  id: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct GetTodoRes {
-  todo: Todo,
-}
-
 #[get("/todo/{id}")]
 async fn get_todo(
   db: web::Data<Pool<SqliteConnectionManager>>,
-  req_path: web::Path<GetTodoReqPath>,
+  req_path: web::Path<model::GetTodoReqPath>,
 ) -> Result<HttpResponse, Error> {
   println!("id: {}", req_path.id);
   let conn = db
@@ -45,7 +37,7 @@ async fn get_todo(
         })?),
         None => None,
       };
-      Ok(Todo {
+      Ok(model::Todo {
         id: row.get(0)?,
         title: row.get(1)?,
         body: row.get(2)?,
@@ -57,7 +49,7 @@ async fn get_todo(
   for todo in todo_itr {
     match todo {
       Ok(t) => {
-        let res = GetTodoRes { todo: t };
+        let res = model::GetTodoRes { todo: t };
         return Ok(HttpResponse::Ok().json(res));
       }
       Err(e) => {
